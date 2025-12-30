@@ -309,7 +309,7 @@ interface TodaysFocusProps {
     userId?: string;
 }
 
-export default function TodaysFocus({ demoMode = true, userId }: TodaysFocusProps) {
+export default function TodaysFocus({ demoMode = false, userId }: TodaysFocusProps) {
     const [data, setData] = useState<TodaysFocusData | null>(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<"tasks" | "risks" | "closing">("tasks");

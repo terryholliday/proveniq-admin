@@ -24,7 +24,7 @@ export async function getOrgId(): Promise<string> {
     throw new Error("No org found");
 }
 
-async function fetchWithOrg(url: string, options: RequestInit = {}) {
+export async function fetchWithOrg(url: string, options: RequestInit = {}) {
     const orgId = await getOrgId();
     const headers = {
         "Content-Type": "application/json",

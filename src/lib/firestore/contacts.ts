@@ -5,7 +5,7 @@ export async function getContacts(orgId: string) {
         .collection("admin_contacts")
         .where("organizationId", "==", orgId)
         .get();
-    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    return snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
 }
 
 export async function createContact(contactData: any) {
