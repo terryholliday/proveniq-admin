@@ -1,0 +1,762 @@
+// schema.prisma
+// PROVENIQ Admin — Internal CRM (Postgres + Prisma)
+// Institutional-grade: auditability, enforcement readiness, and exact money handling.
+//
+// Notes:
+// - Money is stored as micros (BigInt) to avoid float drift.
+// - All enforcement/audit logs are append-only.
+// - JSON is used where flexibility is required (components, blockers, refs), but key fields remain typed.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+//
+// ---------- ENUMS ----------
+//
+
+enum Segment {
+  SMB
+  MID
+  ENTERPRISE
+  STRATEGIC
+}
+
+enum DealStage {
+  INTAKE
+  QUALIFIED
+  DISCOVERY
+  SOLUTION_FIT
+  POV
+  PROPOSAL
+  LEGAL
+  PROCUREMENT
+  COMMIT
+  CLOSED_WON
+  CLOSED_LOST
+  CLOSED_NO_DECISION
+}
+
+enum ForecastCategory {
+  PIPELINE
+  BEST_CASE
+  COMMIT
+  CLOSED
+  OMIT
+}
+
+enum Persona {
+  CFO
+  CIO
+  COO
+  RISK
+  OPS
+  LEGAL
+  PROCUREMENT
+  SECURITY
+  FINANCE
+  OTHER
+}
+
+enum StakeholderRoleInDeal {
+  ECONOMIC_BUYER
+  CHAMPION
+  INFLUENCER
+  BLOCKER
+  TECH_EVAL
+  LEGAL
+  PROCUREMENT
+  OTHER
+}
+
+enum ActivityType {
+  CALL
+  EMAIL
+  MEETING
+  NOTE
+  DOC
+}
+
+enum EvidenceCategory {
+  METRICS
+  ECONOMIC_BUYER
+  DECISION_CRITERIA
+  DECISION_PROCESS
+  PAPER_PROCESS
+  CHAMPION
+  COMPETITION
+}
+
+enum EvidenceStatus {
+  MISSING
+  CLAIMED
+  EVIDENCED
+  BUYER_CONFIRMED
+}
+
+enum PovStatus {
+  DRAFT
+  ACTIVE
+  COMPLETE
+  FAILED
+  CANCELED
+}
+
+enum ProcurementStage {
+  NONE
+  PRE
+  ACTIVE
+  REDLINES
+  FINAL
+}
+
+enum ProcurementRiskLevel {
+  LOW
+  MED
+  HIGH
+}
+
+enum DriState {
+  GREEN
+  YELLOW
+  RED
+  BLACK
+}
+
+enum CertificationStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+  EXPIRED
+}
+
+enum EnforcementAction {
+  DEAL_CREATE
+  DEAL_ADVANCE_STAGE
+  DEAL_SET_CLOSE_DATE
+  DEAL_ADD_PRODUCT
+  DEAL_SET_TERM
+  COMMERCIAL_ATTACH_PRICING
+  COMMERCIAL_REQUEST_DISCOUNT
+  COMMERCIAL_APPROVE_DISCOUNT
+  POV_CREATE
+  POV_START
+  POV_EXPAND_SCOPE
+  POV_EXTEND_END_DATE
+  DEAL_FREEZE
+  DEAL_UNFREEZE
+  DEAL_OVERRIDE
+  DEAL_ESCALATE_EXEC
+}
+
+enum EnforcementReasonCode {
+  CERT_NOT_ACTIVE
+  INSUFFICIENT_CERT_LEVEL
+  DRI_RED_REQUIRES_ESCALATION
+  DRI_BLACK_AUTO_HALT
+  ECONOMIC_BUYER_NOT_MET
+  PAPER_PROCESS_UNKNOWN
+  CHAMPION_WEAK
+  METRICS_NOT_BUYER_CONFIRMED
+  POV_CHARTER_MISSING
+  POV_CRITERIA_MISSING
+  DISCOUNT_WITHOUT_GIVE_GET
+  POLICY_VIOLATION_HARD
+  OTHER
+}
+
+enum EnforcementEventType {
+  AUTHORIZE_DECISION
+  FREEZE
+  UNFREEZE
+  ESCALATION
+  VIOLATION
+  OVERRIDE
+}
+
+enum OverrideScope {
+  DEAL
+  CERTIFICATION
+  AUTHORITY
+}
+
+//
+// ---------- CORE ORG / USERS ----------
+//
+
+model Org {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Primary relations
+  users     User[]
+  accounts  Account[]
+  deals     Deal[]
+
+  // All org-scoped entities
+  contacts         Contact[]
+  dealStakeholders DealStakeholder[]
+  activities       Activity[]
+  meddpiccEvidence MeddpiccEvidence[]
+  povs             Pov[]
+  pricingRequests  PricingRequest[]
+  discountRequests DiscountRequest[]
+  giveGetLedgers   GiveGetLedger[]
+  giveGetItems     GiveGetItem[]
+  procurements     Procurement[]
+  driScores        DriScore[]
+  enforcementEvents EnforcementEvent[]
+  sellerAuthorities SellerAuthorityRecord[]
+  doctrineViolations DoctrineViolation[]
+  founderOverrides FounderOverride[]
+
+  @@index([name])
+}
+
+model User {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  email     String
+  fullName  String
+  // Optional: store role string; real RBAC can be in your Admin auth layer.
+  roleKey   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Authority + governance
+  authority  SellerAuthorityRecord?
+  violations DoctrineViolation[]
+  overrides  FounderOverride[]
+
+  // Deal ownership
+  ownedDeals Deal[] @relation("DealOwner")
+  seDeals    Deal[] @relation("DealSE")
+
+  // Inverse relations for all User references across the system
+  meddpiccUpdates      MeddpiccEvidence[] @relation("MeddpiccUpdatedBy")
+  pricingRequested     PricingRequest[]   @relation("PricingRequestedBy")
+  pricingDecided       PricingRequest[]   @relation("PricingDecidedBy")
+  discountRequested    DiscountRequest[]  @relation("DiscountRequestedBy")
+  discountDecided      DiscountRequest[]  @relation("DiscountDecidedBy")
+  giveGetReviewed      GiveGetLedger[]    @relation("GiveGetReviewedBy")
+  giveGetItemsApproved GiveGetItem[]      @relation("GiveGetItemApprovedBy")
+  enforcementEvents    EnforcementEvent[] @relation("EnforcementEventUser")
+
+  @@unique([orgId, email])
+  @@index([orgId, fullName])
+}
+
+//
+// ---------- CRM ENTITIES ----------
+//
+
+model Account {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  name      String
+  domain    String?
+  industry  String?
+  sizeBand  String? // keep flexible (e.g., "1-10", "11-50", "51-200", etc.)
+  region    String?
+  segment   Segment  @default(ENTERPRISE)
+
+  tags      String[] @default([])
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contacts   Contact[]
+  deals      Deal[]
+  activities Activity[]
+
+  @@index([orgId, name])
+  @@index([orgId, domain])
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  name      String
+  email     String?
+  title     String?
+
+  persona   Persona  @default(OTHER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Deal-specific mapping lives in DealStakeholder (many-to-many).
+  stakeholderLinks DealStakeholder[]
+
+  @@index([orgId, accountId])
+  @@index([orgId, email])
+}
+
+model Deal {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  ownerId   String
+  owner     User     @relation("DealOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+
+  seId      String?
+  se        User?    @relation("DealSE", fields: [seId], references: [id], onDelete: SetNull)
+
+  name      String
+  stage     DealStage @default(INTAKE)
+  forecast  ForecastCategory @default(PIPELINE)
+
+  // Money + term
+  amountMicros BigInt? // e.g., USD micros (1 USD = 1_000_000 micros)
+  currency     String  @default("USD")
+  termMonths   Int?    // multi-year controlled by enforcement
+
+  closeDate    DateTime?
+
+  // Products
+  productMix   String[] @default([]) // ["ClaimsIQ","Ops","Ledger"] etc.
+
+  // Enforcement
+  enforcementState String @default("OPEN") // "OPEN" | "FROZEN" (string to allow future states)
+  frozenReasonCode EnforcementReasonCode?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stakeholders DealStakeholder[]
+  activities   Activity[]
+
+  meddpicc     MeddpiccEvidence[]
+  pov          Pov?
+  giveGet      GiveGetLedger?
+  procurement  Procurement?
+  driScores    DriScore[]
+
+  pricingRequests  PricingRequest[]
+  discountRequests DiscountRequest[]
+
+  enforcementEvents EnforcementEvent[]
+  overrides         FounderOverride[]
+  violations        DoctrineViolation[]
+
+  @@index([orgId, stage])
+  @@index([orgId, ownerId])
+  @@index([orgId, closeDate])
+  @@index([orgId, enforcementState])
+}
+
+model DealStakeholder {
+  id         String   @id @default(cuid())
+  orgId      String
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  dealId     String
+  deal       Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  contactId  String
+  contact    Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  roleInDeal StakeholderRoleInDeal
+  authorityLevel Int @default(0) // 0–3 (your rubric)
+  notes      String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([dealId, contactId])
+  @@index([orgId, dealId])
+}
+
+model Activity {
+  id         String   @id @default(cuid())
+  orgId      String
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  accountId  String?
+  account    Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  dealId     String?
+  deal       Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  type       ActivityType
+  occurredAt DateTime
+
+  summary    String
+  // Optional link to a call recording, doc, internal file, etc.
+  evidenceRef String?
+
+  // Store participant contact IDs as join-table later if needed; start with JSON for speed.
+  participantsJson Json?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([orgId, occurredAt])
+  @@index([orgId, dealId])
+}
+
+//
+// ---------- MEDDPICC EVIDENCE (normalized + auditable) ----------
+//
+
+model MeddpiccEvidence {
+  id         String   @id @default(cuid())
+  orgId      String
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  dealId     String
+  deal       Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  category   EvidenceCategory
+  status     EvidenceStatus @default(MISSING)
+
+  // Evidence pointers, not raw claims (use IDs: call:uuid, note:uuid, doc:uuid)
+  evidenceRefs String[] @default([])
+
+  // Optional structured notes for buyer-confirmed verbatims, etc.
+  notes      String?
+
+  lastUpdatedById String?
+  lastUpdatedBy   User? @relation("MeddpiccUpdatedBy", fields: [lastUpdatedById], references: [id], onDelete: SetNull)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([dealId, category])
+  @@index([orgId, dealId])
+}
+
+//
+// ---------- POV GOVERNANCE ----------
+//
+
+model Pov {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  dealId    String   @unique
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  status    PovStatus @default(DRAFT)
+
+  startDate DateTime?
+  endDate   DateTime?
+
+  charterDocRef String? // required to start
+  scopeLocked   Boolean @default(false)
+
+  // Store criteria as JSON for flexibility + checklists
+  successCriteriaJson Json?
+  killCriteriaJson    Json?
+
+  // Flags used by enforcement rules
+  successCriteriaDefined        Boolean @default(false)
+  successCriteriaBuyerConfirmed Boolean @default(false)
+  killCriteriaDefined           Boolean @default(false)
+  killCriteriaBuyerConfirmed    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, status])
+}
+
+//
+// ---------- COMMERCIALS: PRICING + DISCOUNTS ----------
+//
+
+model PricingRequest {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  dealId    String
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  requestedById String
+  requestedBy   User     @relation("PricingRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+
+  // Proposed commercial package (flexible JSON)
+  packageJson Json
+
+  status    String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  decidedById String?
+  decidedBy   User?  @relation("PricingDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt DateTime?
+  decisionNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, dealId])
+  @@index([orgId, status])
+}
+
+model DiscountRequest {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  dealId    String
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  requestedById String
+  requestedBy   User     @relation("DiscountRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+
+  // Discount expressed in basis points (bps) for precision (e.g., 500 = 5.00%)
+  discountBps Int
+  rationale   String?
+
+  // Must be linked to Give-Get completeness for enforcement
+  giveGetCompleteAtRequest Boolean @default(false)
+
+  status    String @default("PENDING") // PENDING | APPROVED | REJECTED | BLOCKED
+  decidedById String?
+  decidedBy   User?  @relation("DiscountDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt DateTime?
+  decisionNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, dealId])
+  @@index([orgId, status])
+}
+
+//
+// ---------- GIVE-GET LEDGER ----------
+//
+
+model GiveGetLedger {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  dealId    String   @unique
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  // Store line items in separate tables to enable reporting.
+  concessions GiveGetItem[] @relation("GiveGetConcessions")
+  gets        GiveGetItem[] @relation("GiveGetGets")
+
+  completenessStatus String @default("INCOMPLETE") // INCOMPLETE | COMPLETE
+  lastReviewedAt DateTime?
+  lastReviewedById String?
+  lastReviewedBy   User? @relation("GiveGetReviewedBy", fields: [lastReviewedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GiveGetItem {
+  id        String @id @default(cuid())
+  orgId     String
+  org       Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  // Polymorphic relation: one item belongs either to concessions or gets
+  ledgerConcessionId String?
+  ledgerConcession   GiveGetLedger? @relation("GiveGetConcessions", fields: [ledgerConcessionId], references: [id], onDelete: Cascade)
+
+  ledgerGetId String?
+  ledgerGet   GiveGetLedger? @relation("GiveGetGets", fields: [ledgerGetId], references: [id], onDelete: Cascade)
+
+  itemType   String // e.g., "DISCOUNT", "FREE_MONTHS", "SEC_REVIEW_SUPPORT", "CASE_STUDY_RIGHTS"
+  itemValue  String // keep flexible; can be normalized later
+  rationale  String?
+  approvedById String?
+  approvedBy   User? @relation("GiveGetItemApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, itemType])
+}
+
+//
+// ---------- PROCUREMENT ----------
+//
+
+model Procurement {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  dealId    String   @unique
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  engaged   Boolean @default(false)
+  stage     ProcurementStage @default(NONE)
+  redlinesCount Int @default(0)
+  riskLevel ProcurementRiskLevel @default(LOW)
+
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+//
+// ---------- DRI SCORES ----------
+//
+
+model DriScore {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  dealId    String
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  computedAt DateTime @default(now())
+
+  total     Int
+  state     DriState
+
+  // Component breakdown + clamps + blockers as JSON for flexibility & versioning
+  componentBreakdown Json
+  blockersJson       Json?
+  clampsJson         Json?
+
+  recommendedActionsJson Json?
+
+  policyVersion String @default("dri-v1")
+
+  @@index([orgId, dealId, computedAt])
+  @@index([orgId, state])
+}
+
+//
+// ---------- ENFORCEMENT EVENTS (append-only) ----------
+//
+
+model EnforcementEvent {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  dealId    String?
+  deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  userId    String?
+  user      User?    @relation("EnforcementEventUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  eventType EnforcementEventType
+  action    EnforcementAction
+  allowed   Boolean
+
+  reasonCode EnforcementReasonCode
+  policyVersion String @default("enforce-v1")
+
+  // references to evidence artifacts (call:uuid, note:uuid, doc:uuid)
+  evidenceRefs String[] @default([])
+
+  // Link to override when applicable
+  overrideId String?
+  override   FounderOverride? @relation(fields: [overrideId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@index([orgId, dealId])
+  @@index([orgId, reasonCode])
+}
+
+//
+// ---------- GOVERNANCE: AUTHORITY + VIOLATIONS + OVERRIDES ----------
+//
+
+model SellerAuthorityRecord {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  certificationLevel Int @default(0)
+  certificationStatus CertificationStatus @default(EXPIRED)
+
+  authorityScope String[] @default([]) // action keys; enforced via gateway
+  strikeCount Int @default(0)
+
+  lastCertifiedAt DateTime?
+  expiresAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, certificationStatus])
+}
+
+model DoctrineViolation {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  dealId    String?
+  deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  // Keep type flexible; enforce "Hard/Soft" via severity
+  violationType String // e.g., "RoadmapDisclosure", "FeaturePitchWithoutDiagnosis"
+  severity String      // "HARD" | "SOFT"
+  source   String?     // "CallTranscript", "CRMNote", "Email"
+  evidenceRefs String[] @default([])
+
+  notes     String?
+
+  detectedAt DateTime @default(now())
+
+  @@index([orgId, userId, detectedAt])
+  @@index([orgId, severity])
+}
+
+model FounderOverride {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  dealId    String?
+  deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  founderId String
+  founder   User     @relation(fields: [founderId], references: [id], onDelete: Restrict)
+
+  scope     OverrideScope
+  riskAccepted String
+  expiration DateTime
+
+  createdAt DateTime @default(now())
+
+  // Enforcement events that used this override
+  enforcementEvents EnforcementEvent[]
+
+  @@index([orgId, expiration])
+  @@index([orgId, founderId, createdAt])
+}
