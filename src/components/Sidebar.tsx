@@ -144,7 +144,7 @@ export function Sidebar() {
             </nav>
 
             <div className="sidebar-footer">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
                     <div
                         style={{
                             width: 32,
@@ -165,6 +165,24 @@ export function Sidebar() {
                         <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Founder</div>
                     </div>
                 </div>
+                <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ width: "100%", justifyContent: "flex-start" }}
+                    onClick={async () => {
+                        const { createClient } = await import("@/lib/supabase/client");
+                        const supabase = createClient();
+                        await supabase.auth.signOut();
+                        window.location.href = "/login";
+                    }}
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+                        <polyline points="16,17 21,12 16,7" />
+                        <line x1="21" y1="12" x2="9" y2="12" />
+                    </svg>
+                    Sign Out
+                </button>
             </div>
         </aside>
     );
