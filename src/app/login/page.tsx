@@ -11,7 +11,6 @@ export default function LoginPage() {
     const [error, setError] = useState<string | null>(null);
     const [mode, setMode] = useState<"login" | "signup">("login");
     const router = useRouter();
-    const supabase = createClient();
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
@@ -19,6 +18,14 @@ export default function LoginPage() {
         setError(null);
 
         try {
+            const supabase = createClient();
+
+            if (!supabase) {
+                setError("Supabase client is not configured.");
+                setLoading(false);
+                return;
+            }
+
             if (mode === "login") {
                 const { error } = await supabase.auth.signInWithPassword({
                     email,
