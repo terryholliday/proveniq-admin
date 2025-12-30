@@ -4,16 +4,16 @@ import { success, error, requireOrgId } from "@/lib/api-utils";
 import { EvidenceCategory, EvidenceStatus } from "@prisma/client";
 
 interface RouteParams {
-    params: Promise<{ dealId: string }>;
+    params: Promise<{ id: string }>;
 }
 
-// GET /api/deals/[dealId]/meddpicc - Get all MEDDPICC evidence for a deal
+// GET /api/deals/[id]/meddpicc - Get all MEDDPICC evidence for a deal
 export async function GET(req: NextRequest, { params }: RouteParams) {
     try {
         const orgCheck = requireOrgId(req);
         if (orgCheck instanceof Response) return orgCheck;
 
-        const { dealId } = await params;
+        const { id: dealId } = await params;
 
         const evidence = await prisma.meddpiccEvidence.findMany({
             where: { dealId },
@@ -38,19 +38,19 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
         return success(evidence);
     } catch (e) {
-        console.error("GET /api/deals/[dealId]/meddpicc error:", e);
+        console.error("GET /api/deals/[id]/meddpicc error:", e);
         return error("Failed to fetch MEDDPICC evidence", 500);
     }
 }
 
-// PUT /api/deals/[dealId]/meddpicc - Upsert MEDDPICC evidence
+// PUT /api/deals/[id]/meddpicc - Upsert MEDDPICC evidence
 export async function PUT(req: NextRequest, { params }: RouteParams) {
     try {
         const orgCheck = requireOrgId(req);
         if (orgCheck instanceof Response) return orgCheck;
         const { orgId } = orgCheck;
 
-        const { dealId } = await params;
+        const { id: dealId } = await params;
         const body = await req.json();
         const { category, status, evidenceRefs, notes, updatedById } = body;
 
@@ -72,7 +72,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
                 orgId,
                 dealId,
                 category: category as EvidenceCategory,
-                status: status as EvidenceStatus || "MISSING",
+                status: (status as EvidenceStatus) || "MISSING",
                 evidenceRefs: evidenceRefs || [],
                 notes,
                 lastUpdatedById: updatedById,
@@ -84,7 +84,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
         return success(evidence);
     } catch (e) {
-        console.error("PUT /api/deals/[dealId]/meddpicc error:", e);
+        console.error("PUT /api/deals/[id]/meddpicc error:", e);
         return error("Failed to update MEDDPICC evidence", 500);
     }
 }

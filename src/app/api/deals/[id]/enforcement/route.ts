@@ -4,17 +4,17 @@ import { success, error, requireOrgId } from "@/lib/api-utils";
 import {
     EnforcementEventType,
     EnforcementAction,
-    EnforcementReasonCode
+    EnforcementReasonCode,
 } from "@prisma/client";
 
 interface RouteParams {
-    params: Promise<{ dealId: string }>;
+    params: Promise<{ id: string }>;
 }
 
-// GET /api/deals/[dealId]/enforcement - Get enforcement events for a deal
+// GET /api/deals/[id]/enforcement - Get enforcement events for a deal
 export async function GET(req: NextRequest, { params }: RouteParams) {
     try {
-        const { dealId } = await params;
+        const { id: dealId } = await params;
 
         const events = await prisma.enforcementEvent.findMany({
             where: { dealId },
@@ -28,19 +28,19 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
         return success(events);
     } catch (e) {
-        console.error("GET /api/deals/[dealId]/enforcement error:", e);
+        console.error("GET /api/deals/[id]/enforcement error:", e);
         return error("Failed to fetch enforcement events", 500);
     }
 }
 
-// POST /api/deals/[dealId]/enforcement - Log enforcement event
+// POST /api/deals/[id]/enforcement - Log enforcement event
 export async function POST(req: NextRequest, { params }: RouteParams) {
     try {
         const orgCheck = requireOrgId(req);
         if (orgCheck instanceof Response) return orgCheck;
         const { orgId } = orgCheck;
 
-        const { dealId } = await params;
+        const { id: dealId } = await params;
         const body = await req.json();
 
         const {
@@ -76,7 +76,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         });
 
         // If action was blocked, update deal enforcement state
-        if (!allowed && ["DRI_RED_REQUIRES_ESCALATION", "DRI_BLACK_AUTO_HALT", "POLICY_VIOLATION_HARD"].includes(reasonCode)) {
+        if (
+            !allowed &&
+            [
+                "DRI_RED_REQUIRES_ESCALATION",
+                "DRI_BLACK_AUTO_HALT",
+                "POLICY_VIOLATION_HARD",
+            ].includes(reasonCode)
+        ) {
             await prisma.deal.update({
                 where: { id: dealId },
                 data: {
@@ -88,7 +95,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
         return success(event);
     } catch (e) {
-        console.error("POST /api/deals/[dealId]/enforcement error:", e);
+        console.error("POST /api/deals/[id]/enforcement error:", e);
         return error("Failed to log enforcement event", 500);
     }
 }
