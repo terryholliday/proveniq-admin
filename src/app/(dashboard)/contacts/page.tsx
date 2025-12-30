@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Header } from "@/components/Header";
 import Link from "next/link";
+import { fetchWithOrg } from "@/lib/api-client";
 
 interface Contact {
     id: string;
@@ -159,14 +160,30 @@ function getInitials(name: string): string {
 }
 
 export default function ContactsPage() {
-    const [contacts] = useState<Contact[]>(MOCK_CONTACTS);
+    const [contacts, setContacts] = useState<Contact[]>([]);
     const [search, setSearch] = useState("");
     const [roleFilter, setRoleFilter] = useState<string>("ALL");
     const [viewMode, setViewMode] = useState<"grid" | "list" | "orgchart">("grid");
     const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
+    useEffect(() => {
+        async function loadContacts() {
+            try {
+                const res = await fetchWithOrg("/api/admin/contacts");
+                if (res.success) {
+                    setContacts(res.data);
+                } else {
+                    console.error("Failed to load contacts:", res.error);
+                }
+            } catch (e) {
+                console.error("Error loading contacts", e);
+            }
+        }
+        loadContacts();
+    }, []);
+
     const filteredContacts = contacts.filter(c => {
-        const matchesSearch = !search || 
+        const matchesSearch = !search ||
             c.name.toLowerCase().includes(search.toLowerCase()) ||
             c.email.toLowerCase().includes(search.toLowerCase()) ||
             c.accountName.toLowerCase().includes(search.toLowerCase());
