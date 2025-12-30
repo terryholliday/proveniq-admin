@@ -200,6 +200,7 @@ model Org {
   users     User[]
   accounts  Account[]
   deals     Deal[]
+  leads     Lead[]
 
   // All org-scoped entities
   contacts         Contact[]
@@ -285,6 +286,31 @@ model Account {
 
   @@index([orgId, name])
   @@index([orgId, domain])
+}
+
+model Lead {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  name      String
+  email     String?
+  title     String?
+  company   String?
+  domain    String?
+  source    String?
+  status    String   @default("NEW")
+  notes     String?
+  metadata  Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, email, domain])
+  @@index([orgId, email])
+  @@index([orgId, domain])
+  @@index([orgId, status])
+  @@index([orgId, createdAt])
 }
 
 model Contact {
