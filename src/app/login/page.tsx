@@ -97,7 +97,7 @@ export default function LoginPage() {
                             className="form-input"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            placeholder="terry@proveniq.com"
+                            placeholder="terry@proveniq.io"
                             required
                         />
                     </div>
@@ -163,6 +163,20 @@ export default function LoginPage() {
                         {mode === "login"
                             ? "Don't have an account? Sign up"
                             : "Already have an account? Sign in"}
+                    </button>
+                </div>
+
+                {/* Dev Bypass */}
+                <div style={{ textAlign: "center", marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+                    <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ color: "var(--warning)" }}
+                        onClick={() => {
+                            router.push("/dashboard");
+                        }}
+                    >
+                        ⚡ Dev Bypass (skip auth)
                     </button>
                 </div>
             </div>
