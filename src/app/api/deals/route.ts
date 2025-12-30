@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
                     account: { select: { id: true, name: true } },
                     owner: { select: { id: true, fullName: true, email: true } },
                     se: { select: { id: true, fullName: true } },
-                    pov: { select: { id: true, status: true } },
+                    driScores: { take: 1 },
                     _count: {
                         select: { stakeholders: true, activities: true, meddpicc: true },
                     },
@@ -48,7 +48,13 @@ export async function GET(req: NextRequest) {
             prisma.deal.count({ where }),
         ]);
 
-        return success(deals, { total, page, limit });
+        // Serialize BigInt for JSON
+        const serializedDeals = deals.map(deal => ({
+            ...deal,
+            amountMicros: deal.amountMicros?.toString() || null,
+        }));
+
+        return success(serializedDeals, { total, page, limit });
     } catch (e) {
         console.error("GET /api/deals error:", e);
         return error("Failed to fetch deals", 500);

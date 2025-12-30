@@ -185,6 +185,47 @@ enum OverrideScope {
   AUTHORITY
 }
 
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskType {
+  CALL
+  EMAIL
+  MEETING
+  FOLLOW_UP
+  PROPOSAL
+  CONTRACT
+  OTHER
+}
+
+enum NotificationType {
+  TASK_DUE
+  DEAL_UPDATE
+  DEAL_AT_RISK
+  STAGE_CHANGE
+  SYSTEM
+  REMINDER
+}
+
+enum ClosePlanItemStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETE
+  BLOCKED
+  SKIPPED
+}
+
 //
 // ---------- CORE ORG / USERS ----------
 //
@@ -218,6 +259,14 @@ model Org {
   sellerAuthorities SellerAuthorityRecord[]
   doctrineViolations DoctrineViolation[]
   founderOverrides FounderOverride[]
+
+  // WOW features
+  tasks            Task[]
+  notifications    Notification[]
+  dealClosePlans   DealClosePlan[]
+  closePlanItems   ClosePlanItem[]
+  proofPacks       ProofPack[]
+  emailLogs        EmailLog[]
 
   @@index([name])
 }
@@ -254,6 +303,13 @@ model User {
   giveGetItemsApproved GiveGetItem[]      @relation("GiveGetItemApprovedBy")
   enforcementEvents    EnforcementEvent[] @relation("EnforcementEventUser")
 
+  // WOW features
+  tasksAssigned        Task[]             @relation("TaskAssignee")
+  tasksCreated         Task[]             @relation("TaskCreator")
+  notifications        Notification[]
+  closePlanItems       ClosePlanItem[]
+  proofPacks           ProofPack[]
+
   @@unique([orgId, email])
   @@index([orgId, fullName])
 }
@@ -283,6 +339,9 @@ model Account {
   contacts   Contact[]
   deals      Deal[]
   activities Activity[]
+
+  // WOW features
+  tasks      Task[]
 
   @@index([orgId, name])
   @@index([orgId, domain])
@@ -332,6 +391,10 @@ model Contact {
 
   // Deal-specific mapping lives in DealStakeholder (many-to-many).
   stakeholderLinks DealStakeholder[]
+
+  // WOW features
+  tasks      Task[]
+  emailLogs  EmailLog[]
 
   @@index([orgId, accountId])
   @@index([orgId, email])
@@ -387,6 +450,13 @@ model Deal {
   enforcementEvents EnforcementEvent[]
   overrides         FounderOverride[]
   violations        DoctrineViolation[]
+
+  // WOW features
+  tasks             Task[]
+  notifications     Notification[]
+  closePlan         DealClosePlan?
+  proofPacks        ProofPack[]
+  emailLogs         EmailLog[]
 
   @@index([orgId, stage])
   @@index([orgId, ownerId])
@@ -786,4 +856,239 @@ model FounderOverride {
 
   @@index([orgId, expiration])
   @@index([orgId, founderId, createdAt])
+}
+
+//
+// ---------- TASKS ----------
+//
+
+model Task {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  // Optional relations
+  dealId    String?
+  deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  accountId String?
+  account   Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  // Task details
+  title     String
+  description String?
+  type      TaskType @default(OTHER)
+  status    TaskStatus @default(TODO)
+  priority  TaskPriority @default(MEDIUM)
+
+  dueDate   DateTime?
+  completedAt DateTime?
+
+  // Assignment
+  assignedToId String?
+  assignedTo   User? @relation("TaskAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  createdById String?
+  createdBy   User? @relation("TaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  // Close plan link (if task is part of a close plan)
+  closePlanItemId String?
+  closePlanItem   ClosePlanItem? @relation(fields: [closePlanItemId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, status])
+  @@index([orgId, assignedToId])
+  @@index([orgId, dueDate])
+  @@index([orgId, dealId])
+}
+
+//
+// ---------- NOTIFICATIONS ----------
+//
+
+model Notification {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean @default(false)
+
+  // Optional link to related entity
+  dealId    String?
+  deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  taskId    String?
+
+  // Metadata for rendering (icon, action URL, etc.)
+  metaJson  Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([orgId, userId, read])
+  @@index([orgId, userId, createdAt])
+}
+
+//
+// ---------- DEAL CLOSE PLAN ----------
+//
+
+model DealClosePlan {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  dealId    String   @unique
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  // Plan metadata
+  targetCloseDate DateTime?
+  generatedAt DateTime @default(now())
+
+  // AI-generated insights
+  riskSummary String?
+  recommendedActions Json?
+
+  items     ClosePlanItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ClosePlanItem {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  closePlanId String
+  closePlan   DealClosePlan @relation(fields: [closePlanId], references: [id], onDelete: Cascade)
+
+  // Item details
+  title     String
+  description String?
+  category  String? // "stakeholder", "commercial", "technical", "legal", "champion"
+  status    ClosePlanItemStatus @default(PENDING)
+  sortOrder Int @default(0)
+
+  // Optional due date
+  dueDate   DateTime?
+  completedAt DateTime?
+
+  // Who is responsible
+  ownerId   String?
+  owner     User? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+
+  // Tasks generated from this item
+  tasks     Task[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, closePlanId])
+  @@index([orgId, status])
+}
+
+//
+// ---------- PROOF PACK (Executive Deal Summary Snapshots) ----------
+//
+
+model ProofPack {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  dealId    String
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  // Snapshot metadata
+  generatedAt DateTime @default(now())
+  generatedById String?
+  generatedBy   User? @relation(fields: [generatedById], references: [id], onDelete: SetNull)
+
+  // Snapshot content (frozen at generation time)
+  dealName  String
+  accountName String
+  dealValue BigInt?
+  stage     String
+  closeDate DateTime?
+
+  // MEDDPICC snapshot
+  meddpiccSnapshot Json?
+
+  // Stakeholder snapshot
+  stakeholderSnapshot Json?
+
+  // Activity summary
+  activitySummary Json?
+
+  // Win probability at time of generation
+  winProbability Int?
+
+  // DRI score at time of generation
+  driScore Int?
+  driState String?
+
+  // Executive summary (AI-generated or manual)
+  executiveSummary String?
+
+  // Export metadata
+  exportFormat String? // "pdf", "markdown", "clipboard"
+  exportedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([orgId, dealId])
+  @@index([orgId, generatedAt])
+}
+
+//
+// ---------- EMAIL LOG ----------
+//
+
+model EmailLog {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  // Relations
+  dealId    String?
+  deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  // Email details
+  subject   String
+  body      String?
+  toAddresses String[]
+  ccAddresses String[] @default([])
+  fromAddress String?
+
+  // Tracking
+  sentAt    DateTime?
+  openedAt  DateTime?
+  clickedAt DateTime?
+  repliedAt DateTime?
+
+  // Metadata
+  threadId  String?
+  messageId String?
+  metaJson  Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, dealId])
+  @@index([orgId, contactId])
+  @@index([orgId, sentAt])
 }

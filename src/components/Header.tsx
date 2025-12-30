@@ -1,5 +1,7 @@
 "use client";
 
+import { NotificationCenter } from "./NotificationCenter";
+
 interface HeaderProps {
     title: string;
     subtitle?: string;
@@ -17,7 +19,10 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
                     </p>
                 )}
             </div>
-            {actions && <div className="flex gap-2">{actions}</div>}
+            <div className="flex items-center gap-4">
+                {actions && <div className="flex gap-2">{actions}</div>}
+                <NotificationCenter />
+            </div>
         </header>
     );
 }

@@ -1,4 +1,6 @@
 import { Sidebar } from "@/components/Sidebar";
+import { CommandPalette } from "@/components/CommandPalette";
+import { DemoModeProvider } from "@/contexts/DemoModeContext";
 import "../globals.css";
 
 export default async function DashboardLayout({
@@ -10,9 +12,12 @@ export default async function DashboardLayout({
     // Re-enable auth check when NEXT_PUBLIC_SUPABASE_ANON_KEY is set
 
     return (
-        <div className="app-layout">
-            <Sidebar />
-            <main className="main-content">{children}</main>
-        </div>
+        <DemoModeProvider>
+            <div className="app-layout">
+                <Sidebar />
+                <main className="main-content">{children}</main>
+                <CommandPalette />
+            </div>
+        </DemoModeProvider>
     );
 }

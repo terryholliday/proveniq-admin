@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import DemoModeToggle from "./DemoModeToggle";
 
 // Icons (inline SVG for simplicity)
 const icons = {
@@ -83,14 +84,18 @@ const navigation: NavSection[] = [
         items: [
             { label: "Dashboard", href: "/dashboard", icon: "dashboard" },
             { label: "Reports", href: "/reports", icon: "reports" },
+            { label: "Tasks", href: "/tasks", icon: "dashboard" },
+            { label: "Simulator", href: "/simulator", icon: "reports" },
         ],
     },
     {
         title: "Pipeline",
         items: [
+            { label: "Pipeline", href: "/pipeline", icon: "deals" },
             { label: "Deals", href: "/deals", icon: "deals" },
             { label: "Accounts", href: "/accounts", icon: "accounts" },
             { label: "Contacts", href: "/contacts", icon: "contacts" },
+            { label: "Emails", href: "/emails", icon: "contacts" },
         ],
     },
     {
@@ -118,7 +123,7 @@ export function Sidebar() {
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18l6.9 3.45L12 11.09 5.1 7.63 12 4.18zM4 8.82l7 3.5v7.36l-7-3.5V8.82zm9 10.86v-7.36l7-3.5v7.36l-7 3.5z" />
                     </svg>
-                    PROVENIQ Admin
+                    PROVENIQ Sales
                 </div>
             </div>
 
@@ -144,6 +149,11 @@ export function Sidebar() {
             </nav>
 
             <div className="sidebar-footer">
+                {/* Demo Mode Toggle */}
+                <div style={{ marginBottom: 16 }}>
+                    <DemoModeToggle />
+                </div>
+
                 <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
                     <div
                         style={{

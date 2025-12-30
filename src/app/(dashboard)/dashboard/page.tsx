@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Header } from "@/components/Header";
+import TodaysFocus from "@/components/TodaysFocus";
 import { fetchDeals, fetchDashboardStats } from "@/lib/api-client";
 import Link from "next/link";
 
@@ -47,16 +48,28 @@ export default function DashboardPage() {
     const [deals, setDeals] = useState<Deal[]>([]);
     const [stats, setStats] = useState<Stats | null>(null);
     const [loading, setLoading] = useState(true);
+    const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
 
     useEffect(() => {
         async function loadData() {
             try {
-                const [dealsRes, statsRes] = await Promise.all([
+                // Dynamically import to avoid server-side issues if any
+                const { fetchDeals, fetchDashboardStats, fetchUsers } = await import("@/lib/api-client");
+
+                const [dealsRes, statsRes, usersRes] = await Promise.all([
                     fetchDeals({ limit: 10 }),
                     fetchDashboardStats(),
+                    fetchUsers()
                 ]);
+
                 setDeals(dealsRes.data || []);
                 setStats(statsRes);
+
+                // For this Admin MVP, we assume the first user is the active one
+                // In a real app, this would come from the auth session
+                if (usersRes.data && usersRes.data.length > 0) {
+                    setCurrentUserId(usersRes.data[0].id);
+                }
             } catch (e) {
                 console.error("Failed to load dashboard:", e);
             } finally {
@@ -82,6 +95,11 @@ export default function DashboardPage() {
             <Header title="Dashboard" subtitle="Pipeline overview and key metrics" />
 
             <div className="page-content">
+                {/* Today's Focus Cockpit */}
+                <div className="mb-6">
+                    <TodaysFocus demoMode={false} userId={currentUserId} />
+                </div>
+
                 {/* Stats Grid */}
                 <div className="stats-grid mb-6">
                     <div className="stat-card">
